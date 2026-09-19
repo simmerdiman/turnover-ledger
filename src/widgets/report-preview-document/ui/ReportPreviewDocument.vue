@@ -209,33 +209,31 @@ const getTableTotalLabel = () => getReportTotalLabel(props.script)
   }
 
   .ReportPreviewDocument_Column {
-    width: 100%;
-    max-width: 20%;
+    width: 20%;
     padding: 0 10px;
 
     &_type {
       &_num {
-        max-width: 8%;
+        width: 8%;
       }
 
       &_description {
-        max-width: 32%;
+        width: 32%;
       }
     }
   }
 
   .ReportPreviewDocument_Column_landscape {
     .ReportPreviewDocument_Column {
-      width: 100%;
-      max-width: 13%;
+      width: 13%;
 
       &_type {
         &_num {
-          max-width: 7%;
+          width: 7%;
         }
 
         &_description {
-          max-width: 56%;
+          width: 54%;
         }
       }
     }
