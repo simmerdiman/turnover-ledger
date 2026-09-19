@@ -10,22 +10,31 @@ import router from './router'
 import { useCurrencyStore } from '@/entities/currency'
 import { useReportStore } from '@/entities/report'
 import { i18n, useLocaleStore } from '@/shared/i18n'
+import { receiveEmailLink } from '@/features/cloud-ledger/cloud'
 
-const app = createApp(App)
+async function start() {
+  try {
+    await receiveEmailLink()
+  } catch {
+    sessionStorage.setItem('kpo-login-error', 'Ссылка входа недействительна. Запроси новое письмо.')
+  }
+  const app = createApp(App)
 
-const pinia = createPinia()
+  const pinia = createPinia()
 
-app.use(pinia)
-app.use(i18n)
-app.use(router)
-app.directive('maska', vMaska)
-app.directive('autofocus', vAutofocus)
+  app.use(pinia)
+  app.use(i18n)
+  app.use(router)
+  app.directive('maska', vMaska)
+  app.directive('autofocus', vAutofocus)
 
-useReportStore(pinia).hydrateFromLocalStorage()
-const currencyStore = useCurrencyStore(pinia)
-currencyStore.hydrateFromLocalStorage()
-useLocaleStore(pinia).hydrateFromLocalStorage()
+  useReportStore(pinia).hydrateFromLocalStorage()
+  const currencyStore = useCurrencyStore(pinia)
+  currencyStore.hydrateFromLocalStorage()
+  useLocaleStore(pinia).hydrateFromLocalStorage()
 
-void currencyStore.loadCurrencies()
+  void currencyStore.loadCurrencies()
 
-app.mount('#app')
+  app.mount('#app')
+}
+void start()

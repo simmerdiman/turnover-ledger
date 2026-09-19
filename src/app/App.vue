@@ -1,5 +1,9 @@
+<script setup lang="ts">
+import CloudLedger from '@/features/cloud-ledger/CloudLedger.vue'
+</script>
+
 <template>
-  <RouterView />
+  <CloudLedger><RouterView /></CloudLedger>
 </template>
 
 <style scoped></style>
