@@ -6,7 +6,6 @@ import { vAutofocus } from '@/shared/lib'
 import './styles/main.css'
 
 import App from './App.vue'
-import router from './router'
 import { useCurrencyStore } from '@/entities/currency'
 import { useReportStore } from '@/entities/report'
 import { i18n, useLocaleStore } from '@/shared/i18n'
@@ -18,6 +17,7 @@ async function start() {
   } catch {
     sessionStorage.setItem('kpo-login-error', 'Ссылка входа недействительна. Запроси новое письмо.')
   }
+  const { default: router } = await import('./router')
   const app = createApp(App)
 
   const pinia = createPinia()
