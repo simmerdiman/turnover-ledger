@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { signInWithPassword, setAccountPassword, authError, CloudError } from './cloud'
+import { describe, expect, it, vi } from 'vitest'
 import { equal, reconcile, type Cache, type Document } from './cloud'
 import type { ReportState } from '@/entities/report/model/types'
 
@@ -25,4 +26,65 @@ describe('cloud reconciliation', () => {
   it('treats PostgreSQL JSON key ordering as equivalent', () =>
     expect(equal({ a: 1, b: { c: 2, d: 3 } }, { b: { d: 3, c: 2 }, a: 1 })).toBe(true))
   it('preserves meaningful row order', () => expect(equal([1, 2], [2, 1])).toBe(false))
+})
+
+describe('password sign-in', () => {
+  it('uses the password endpoint without sending an email and does not persist the password', async () => {
+    const values = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => values.get(k) ?? null,
+      setItem: (k: string, v: string) => values.set(k, v),
+    })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          access_token: 'test-token',
+          refresh_token: 'test-refresh',
+          expires_in: 3600,
+          user: { id: 'test-user' },
+        }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      await signInWithPassword(' Owner@Example.com ', 'test-only-password')
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(fetchMock.mock.calls[0]![0]).toContain('/auth/v1/token?grant_type=password')
+      expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual({
+        email: 'owner@example.com',
+        password: 'test-only-password',
+      })
+      expect([...values.values()].join('')).not.toContain('test-only-password')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+  it('updates only the current authenticated user using PUT', async () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () =>
+        JSON.stringify({
+          access_token: 'test-token',
+          refresh_token: 'test-refresh',
+          expires_at: Date.now() / 1000 + 3600,
+          user: { id: 'test-user' },
+        }),
+    })
+    vi.stubGlobal('navigator', {})
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: 'test-user' }) })
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      await setAccountPassword('test-only-password')
+      expect(fetchMock.mock.calls[0]![0]).toContain('/auth/v1/user')
+      expect(fetchMock.mock.calls[0]![1].method).toBe('PUT')
+      expect(fetchMock.mock.calls[0]![1].headers.Authorization).toBe('Bearer test-token')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+  it('explains the mail limit without claiming the database is offline', () => {
+    expect(authError(new CloudError(429, 'over_email_send_rate_limit', 'email rate limit exceeded'))).toContain(
+      'лимит писем',
+    )
+  })
 })

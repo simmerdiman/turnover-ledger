@@ -22,9 +22,9 @@ export class CloudError extends Error {
   }
 }
 
-async function request(path: string, body?: unknown, token?: string): Promise<unknown> {
+async function request(path: string, body?: unknown, token?: string, method?: string): Promise<unknown> {
   const response = await fetch(API_URL + path, {
-    method: body === undefined ? 'GET' : 'POST',
+    method: method ?? (body === undefined ? 'GET' : 'POST'),
     headers: {
       apikey: KEY,
       'Content-Type': 'application/json',
@@ -67,6 +67,29 @@ export async function sendCode(email: string) {
     create_user: true,
   })
 }
+export async function signInWithPassword(email: string, password: string) {
+  return remember(
+    await request('/auth/v1/token?grant_type=password', {
+      email: email.trim().toLowerCase(),
+      password,
+    }),
+  )
+}
+export async function setAccountPassword(password: string) {
+  await request('/auth/v1/user', { password }, await accessToken(), 'PUT')
+}
+export function authError(reason: unknown): string {
+  if (reason instanceof CloudError) {
+    if (reason.status === 429 || /rate.limit/i.test(reason.message))
+      return 'Достигнут лимит писем. Используй пароль или уже полученную ссылку. Новое письмо можно запросить позже.'
+    if (reason.code === 'invalid_credentials' || /invalid login credentials/i.test(reason.message))
+      return 'Неверная почта или пароль. Если пароль ещё не задан, открой КПО там, где ты уже вошёл, и нажми «Задать пароль».'
+    if (reason.code === 'email_not_confirmed') return 'Сначала подтверди почту по ссылке из письма.'
+    if (reason.code === 'weak_password') return 'Выбери более надёжный пароль: минимум 12 символов.'
+  }
+  return reason instanceof Error ? reason.message : 'Не удалось выполнить вход. Попробуй ещё раз.'
+}
+
 export async function verifyCode(email: string, token: string) {
   return remember(
     await request('/auth/v1/verify', { email: email.trim().toLowerCase(), token: token.trim(), type: 'email' }),

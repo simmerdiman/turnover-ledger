@@ -3,6 +3,9 @@ import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useReportStore } from '@/entities/report'
 import {
   CloudError,
+  authError,
+  signInWithPassword,
+  setAccountPassword,
   equal,
   loadDocument,
   permitted,
@@ -18,6 +21,12 @@ import {
 
 const store = useReportStore()
 const email = ref('')
+const password = ref('')
+const newPassword = ref('')
+const repeatPassword = ref('')
+const showPasswordSetup = ref(false)
+const passwordNotice = ref('')
+const passwordError = ref('')
 const codeSent = ref(false)
 const loggedIn = ref(false)
 const ready = ref(false)
@@ -203,6 +212,50 @@ async function resolveConflict(keepLocal: boolean) {
     busy.value = false
   }
 }
+async function passwordLogin() {
+  busy.value = true
+  error.value = ''
+  try {
+    await signInWithPassword(email.value, password.value)
+    password.value = ''
+    codeSent.value = false
+    await initialize()
+  } catch (reason) {
+    status.value = 'Не удалось войти'
+    error.value = authError(reason)
+  } finally {
+    busy.value = false
+  }
+}
+async function savePassword() {
+  passwordError.value = ''
+  if (newPassword.value.length < 12) {
+    passwordError.value = 'Минимум 12 символов.'
+    return
+  }
+  if (newPassword.value !== repeatPassword.value) {
+    passwordError.value = 'Пароли не совпадают.'
+    return
+  }
+  busy.value = true
+  try {
+    await setAccountPassword(newPassword.value)
+    newPassword.value = ''
+    repeatPassword.value = ''
+    showPasswordSetup.value = false
+    passwordNotice.value = 'Пароль сохранён. Теперь можно входить с любого устройства по почте и паролю.'
+  } catch (reason) {
+    passwordError.value = authError(reason)
+  } finally {
+    busy.value = false
+  }
+}
+function closePasswordSetup() {
+  showPasswordSetup.value = false
+  newPassword.value = ''
+  repeatPassword.value = ''
+  passwordError.value = ''
+}
 async function requestCode() {
   busy.value = true
   error.value = ''
@@ -211,7 +264,8 @@ async function requestCode() {
     codeSent.value = true
     status.value = 'Письмо отправлено. Открой ссылку из письма на этом устройстве.'
   } catch (reason) {
-    failure(reason)
+    status.value = 'Письмо не отправлено'
+    error.value = authError(reason)
   } finally {
     busy.value = false
   }
@@ -256,18 +310,23 @@ onBeforeUnmount(() => {
       <h1>Твоя книга доходов</h1>
       <p>Одни и те же записи на компьютере и телефоне.</p>
       <p role="status">{{ status }}</p>
-      <form v-if="!loggedIn && !codeSent" @submit.prevent="requestCode">
+      <form v-if="!loggedIn" @submit.prevent="passwordLogin">
         <label for="cloud-email">Электронная почта</label>
-        <input id="cloud-email" v-model="email" type="email" autocomplete="email" required :readonly="codeSent" />
-        <button :disabled="busy">{{ busy ? 'Подожди…' : 'Получить ссылку для входа' }}</button>
-      </form>
-      <template v-if="codeSent && !loggedIn">
-        <p>Проверь папку «Спам». Сейчас доступно до двух писем для входа в час.</p>
-        <button type="button" class="CloudSecondary" :disabled="busy" @click="codeSent = false">
-          Изменить адрес или запросить новое письмо
+        <input id="cloud-email" v-model="email" type="email" autocomplete="username" required />
+        <label for="cloud-password">Пароль</label>
+        <input id="cloud-password" v-model="password" type="password" autocomplete="current-password" required />
+        <button :disabled="busy">{{ busy ? 'Подожди…' : 'Войти' }}</button>
+        <button type="button" class="CloudSecondary" :disabled="busy || !email.trim()" @click="requestCode">
+          Первый вход / забыл пароль — получить ссылку
         </button>
-        <button type="button" :disabled="busy" @click="initialize">Я уже открыл ссылку</button>
-      </template>
+      </form>
+      <p v-if="codeSent && !loggedIn">
+        Открой ссылку из письма на этом устройстве. После входа нажми «Задать пароль». Для писем действует лимит; вход
+        по паролю писем не требует.
+      </p>
+      <button v-if="codeSent && !loggedIn" type="button" :disabled="busy" @click="initialize">
+        Я уже открыл ссылку
+      </button>
       <button v-if="loggedIn && !ready" :disabled="busy" @click="initialize">Повторить подключение</button>
       <p v-if="error" class="CloudError" role="alert">{{ error }}</p>
       <small>Вход доступен владельцу книги. На общем компьютере нажимай «Выйти» после работы.</small>
@@ -277,11 +336,48 @@ onBeforeUnmount(() => {
     <div class="CloudBar no-print">
       <span role="status">{{ status }}</span>
       <button :disabled="busy" @click="synchronize">Синхронизировать</button>
+      <button
+        :disabled="busy"
+        @click="
+          showPasswordSetup = true
+          passwordNotice = ''
+        "
+      >
+        Задать пароль
+      </button>
       <button :disabled="dirty || busy" @click="logout">Выйти</button>
+      <p v-if="passwordNotice" role="status">{{ passwordNotice }}</p>
       <p v-if="error" class="CloudError" role="alert">
         {{ error }}. Изменения остаются на этом устройстве; не закрывай страницу до сохранения.
       </p>
     </div>
+    <section v-if="showPasswordSetup" class="CloudPassword no-print" aria-label="Задать пароль">
+      <h2>Пароль для входа на всех устройствах</h2>
+      <p>Для {{ email }}. Это пароль от КПО, а не от базы данных Supabase.</p>
+      <form @submit.prevent="savePassword">
+        <label for="new-password">Новый пароль (минимум 12 символов)</label>
+        <input
+          id="new-password"
+          v-model="newPassword"
+          type="password"
+          autocomplete="new-password"
+          minlength="12"
+          required
+        />
+        <label for="repeat-password">Повтори пароль</label>
+        <input
+          id="repeat-password"
+          v-model="repeatPassword"
+          type="password"
+          autocomplete="new-password"
+          minlength="12"
+          required
+        />
+        <button :disabled="busy">{{ busy ? 'Сохраняем…' : 'Сохранить пароль' }}</button>
+        <button type="button" class="CloudSecondary" :disabled="busy" @click="closePasswordSetup">Отмена</button>
+        <p v-if="passwordError" class="CloudError" role="alert">{{ passwordError }}</p>
+      </form>
+    </section>
     <section v-if="conflict" class="CloudConflict no-print" role="alert">
       <h2>Есть изменения на двух устройствах</h2>
       <p>Чтобы не потерять записи, автоматическое сохранение приостановлено. Выбери версию, которую нужно оставить.</p>
@@ -296,6 +392,14 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.CloudPassword {
+  max-width: 480px;
+  margin: 24px auto;
+  padding: 24px;
+  background: white;
+  border: 1px solid #9bb5a9;
+  border-radius: 16px;
+}
 .CloudLogin {
   min-height: 100vh;
   display: grid;
