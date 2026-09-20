@@ -339,7 +339,7 @@ onBeforeUnmount(() => {
       <button
         :disabled="busy"
         @click="
-          showPasswordSetup = true
+          showPasswordSetup = true;
           passwordNotice = ''
         "
       >
